@@ -3,13 +3,15 @@ local osc = require "osc"
 print(osc)
 for k, v in pairs(osc) do print(k, v) end
 
+local r = osc.Recv(8080)
+print(r:host(), r:port(), r:ip())
 
 local s = osc.Send("localhost", 8080)
 print(s:host(), s:port(), s:ip())
 
 -- send messages:
---s:send("/fo", 1, 2, 3)	--- float
---s:send("/foo", "a", "aa", "aaa", "aaaa")
+s:send("/fo", 1, 2, 3)	--- float
+s:send("/foo", "a", "aa", "aaa", "aaaa")
 
 -- send bundles:
 --[[
@@ -31,6 +33,10 @@ PACKET:
 s:send{ 
 	{ "/bee", 3, "four" }, 
 	{ "/bim", 66 }, 
+	{		
+		{ "/bim", 66 }, 
+		{ "/bap", "a", "aa", "aaa", } 
+	},
 	{ "/bap", "a", "aa", "aaa", } 
 }
 
@@ -43,3 +49,9 @@ s:send{
 	}
 }
 --]]
+
+osc.sleep(1)
+
+for m in r:recv() do 
+	print(m.addr, m.types, m.time, unpack(m))
+end

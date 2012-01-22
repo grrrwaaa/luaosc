@@ -1,13 +1,8 @@
 /*
-Luaclang is a module (loadable library) for the Lua programming language (www.lua.org) providing bindings to the LLVM/Clang APIs (www.llvm.org), in order to control LLVM/Clang from within Lua scripts.
-Luaclang is built against the LLVM 2.6 stable release, for Lua 5.1.
-Luaclang aims to closely follow the LLVM API, but making use of Lua idioms where possible. 
+See README.md
 
-Luaclang is released under the MIT open source license
-@see http://www.opensource.org/licenses/mit-license.php
-
-Copyright (c) 2009 Graham Wakefield & Wesley Smith
-http://code.google.com/p/luaclang/
+Copyright (c) 2009-2012 Graham Wakefield & Wesley Smith
+https://github.com/grrrwaaa/luaosc/
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -38,8 +33,8 @@ THE SOFTWARE.
 #include "apr_time.h"
 
 /* oscpack */
-#include "oscpack/osc/OscPacketListener.h"
-#include "oscpack/osc/OscOutboundPacketStream.h"
+//#include "oscpack/osc/OscPacketListener.h"
+//#include "oscpack/osc/OscOutboundPacketStream.h"
 
 /* for time-tag calculation */
 #include <unistd.h>
@@ -51,6 +46,36 @@ const double NTP_SCALE_FRAC = 4294967295.0; // maximum value of the ntp fraction
 // used to ensure 4-byte alignment
 static inline long roundup4( long x ) {
     return ((x-1) & (~0x03L)) + 4;
+}
+
+// return the first 4 byte boundary after the end of a str4
+// be careful about calling this version if you don't know whether
+// the string is terminated correctly.
+static inline char* findstr4end( char *p ) {
+	if( p[0] == '\0' )    // special case for SuperCollider integer address pattern
+		return p + 4;
+    p += 3;
+    while( *p )
+        p += 4;
+    return p + 1;
+}
+
+// return the first 4 byte boundary after the end of a str4
+// returns 0 if p == end or if the string is unterminated
+static inline char* findstr4end( char *p, const char *end )
+{
+    if( p >= end )
+        return 0;
+	if( p[0] == '\0' )    // special case for SuperCollider integer address pattern
+		return p + 4;
+    p += 3;
+    end -= 1;
+    while( p < end && *p )
+        p += 4;
+    if( *p )
+        return 0;
+    else
+        return p + 1;
 }
 
 // @see http://stackoverflow.com/questions/2641954/create-ntp-time-stamp-from-gettimeofday
@@ -129,7 +154,7 @@ static int lua_status_apr(lua_State * L, apr_status_t err) {
 
 /*
 	Binding to osc::Blob
-*/
+
 #pragma mark osc::Blob
 template<> const char * Glue<osc::Blob>::usr_name() { return "Blob"; }
 template<> void Glue<osc::Blob>::usr_gc(lua_State * L, osc::Blob * u) { 
@@ -138,149 +163,110 @@ template<> void Glue<osc::Blob>::usr_gc(lua_State * L, osc::Blob * u) {
 template<> void Glue<osc::Blob>::usr_mt(lua_State * L) {
 	// any method to retrieve the data?
 }
+*/
 
 /* 
 	OSC packet parser 
 */
 #pragma mark packet parser
-int osc_parsemessage(lua_State * L, const osc::ReceivedMessage & p) {
+
+int parsemessage(lua_State * L, char * buf, size_t size) {
+	if (size == 0) luaL_error(L, "empty message");
+	if((size & 0x03L) != 0 ) luaL_error(L, "error not a multiple of 4 bytes");
+	const char * end = buf + size;
+	char * types = findstr4end(buf);
+	
 	lua_newtable(L);
-		
-	lua_pushstring(L, "addr");
-	lua_pushstring(L, p.AddressPattern() ? p.AddressPattern() : "");
-	lua_rawset(L, -3);
+	lua_pushstring(L, buf); lua_setfield(L, -2, "addr");
 	
-	unsigned long argc = p.ArgumentCount();
-	const char *tags   = p.TypeTags() ? p.TypeTags() : "";
-	lua_pushstring(L, "types");
-	lua_pushstring(L, tags);
-	lua_rawset(L, -3);
-	
-	osc::ReceivedMessageArgumentStream args = p.ArgumentStream();
-	
-	for(unsigned i=0; i < argc; i++) {
-		try {
-			switch(tags[i])
-			{
-				/*
-					Standard OSC types
-				*/
-				case 'f': {
-					float v; args >> v;
-					lua_pushnumber(L, v);
-				} break;
-				case 'i': {
-					osc::int32 v; args >> v;
-					lua_pushinteger(L, v);
-				} break;
-				case 's': {
-					const char * v; args >> v;
-					lua_pushstring(L, v);
-				} break;
-				case 'b': {
-					osc::Blob * v = new osc::Blob();
-					args >> *v;
-					Glue<osc::Blob>::push(L, v);
+	if (types == end) {
+		// message with no arguments
+	} else {
+		if (types[0] != ',') luaL_error(L, "malformed type tags");
+		if (types[1] != '\0') {
+			char * args = findstr4end(types, end);
+			if (args == 0) luaL_error(L, "unterminated type tags");
+			lua_pushstring(L, types+1); lua_setfield(L, -2, "types");
+			
+			for (int i=1; types[i] != '\0'; i++) {
+				switch(types[i]) {
+					case 'f': {
+						if (args + 4 > end) luaL_error(L, "message arguments exceed message size");
+						swap32(args);
+						lua_pushnumber(L, *(float *)args); lua_rawseti(L, -2, i);
+						args += 4;
+						break;
+					}
+					case 'i': {
+						if (args + 4 > end) luaL_error(L, "message arguments exceed message size");
+						swap32(args);
+						lua_pushinteger(L, *(int32_t *)args); lua_rawseti(L, -2, i);
+						args += 4;
+						break;
+					}
+					case 's': {
+						unsigned len = strlen(args);
+						unsigned len4 = roundup4(len+1);
+						if (args + len4 > end) luaL_error(L, "message arguments exceed message size");
+						
+						lua_pushlstring(L, args, len); lua_rawseti(L, -2, i);
+						args += len4;
+						
+						break;
+					}
+					case 'b': {
 					
-				} break;
-
-				/*
-					Non-Standard OSC types
-				*/
-				case 'h': {
-					osc::int64 v; args >> v;
-					lua_pushstring(L, "64-bit ints not handled yet");
-				} break;
-
-				case 't': {
-					osc::TimeTag v; args >> v;
-					lua_pushstring(L, "time-tags not handled yet");
-				} break;
-
-				case 'd': {
-					double v; args >> v;
-					lua_pushnumber(L, v);
-				} break;
-				case 'S': {
-					const char * v; args >> v;
-					lua_pushstring(L, v);
-				} break;
-				case 'c': {
-					char v; args >> v;
-					lua_pushstring(L, &v);
-				} break;
-
-				case 'r': {
-					osc::RgbaColor v; args >> v;
-					lua_pushstring(L, "RGBA-tags not handled yet");
-				} break;
-				case 'm': {
-					osc::MidiMessage v; args >> v;
-					lua_pushstring(L, "MIDI-tags not handled yet");
-				} break;
-
-				case 'T': {
-					args.grahamWantsToIgnoreThisArgument();
-					lua_pushboolean(L, true);
-				} break;
-				case 'F': {
-					args.grahamWantsToIgnoreThisArgument();
-					lua_pushboolean(L, false);
-				} break;
-				case 'N': {
-					args.grahamWantsToIgnoreThisArgument();
-					lua_pushnil(L);
-				} break;
-				case 'I': {
-					args.grahamWantsToIgnoreThisArgument();
-					lua_pushnumber(L, 696969);
-				} break;
-
-				case '[':
-				case ']': {
-					args.grahamWantsToIgnoreThisArgument();
-					lua_pushstring(L, "[]-tags not handled yet");
-				} break;
-
-				default: {
-					// q: how to increment args stream??
-					args.grahamWantsToIgnoreThisArgument();
-					lua_pushnil(L);
-				} break;
+						//osc::Blob * v = new osc::Blob();
+						//args >> *v;
+						//Glue<osc::Blob>::push(L, v);
+						luaL_error(L, "blobs not yet supported");
+						break;
+					}
+				}
 			}
-		
 		}
-		catch(const osc::WrongArgumentTypeException &e) {
-			fprintf(stderr, "Recv.recv: wrong argument in message\n");
-			lua_pushnil(L);
-		}
-		catch(...) {	// all other exceptions
-			fprintf(stderr, "Recv.recv: error handling messages\n");
-			lua_pushnil(L);
-		}	
-		lua_rawseti(L, -2, i+1);
 	}
 	return 1;
 }
 
-int osc_parsebundle(lua_State * L, const osc::ReceivedBundle & p) {
-	int nret = 0;
-	for(osc::ReceivedBundle::const_iterator i=p.ElementsBegin(); i != p.ElementsEnd(); ++i) {
-		if(i->IsBundle()) {
-			nret += osc_parsebundle(L, osc::ReceivedBundle(*i));
-		} else {
-			nret += osc_parsemessage(L, osc::ReceivedMessage(*i));
-		}
+int osc_parse(lua_State * L, char * buf, size_t size);
+
+int parsebundle(lua_State * L, char * buf, size_t size) {
+	if (size == 0) luaL_error(L, "empty bundle");
+	
+
+	lua_newtable(L);
+	char * data = buf + 8;				// skip #bundle\0
+	char * end = buf + size;
+	// time tag:
+	int32_t * tt = (int32_t *)(data); 
+	swap64(tt);
+	double seconds = tt[0] + (tt[1] / NTP_SCALE_FRAC);
+	lua_pushnumber(L, seconds); lua_setfield(L, -2, "time");
+	data += 8;
+	
+	for (int i=1; data < end; i++) {
+		// get packet size:
+		swap32(data);
+		int32_t bufsize = *(int32_t *)data;
+		data += 4;
+		//printf("element %d %d %s\n", i, bufsize, data);
+		
+		// RECURSE:
+		osc_parse(L, data, bufsize);
+		lua_rawseti(L, -2, i);
+		
+		data += bufsize;
 	}
-	return nret;
+	return 1;
 }
 
-int osc_parse(lua_State * L, const char * buf, size_t size) {
-	osc::ReceivedPacket p(buf, size);
-	if(p.IsBundle()) {
-		return osc_parsebundle(L, osc::ReceivedBundle(p));
+int osc_parse(lua_State * L, char * buf, size_t size) {
+	//printf("received %s %d\n", buf, size);
+	if (size > 0 && buf[0] == '#') {
+		return parsebundle(L, buf, size);
 	} else {
-		return osc_parsemessage(L, osc::ReceivedMessage(p));
+		return parsemessage(L, buf, size);
 	}
 }
 
