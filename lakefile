@@ -5,6 +5,10 @@ if PLAT == "Darwin" then
 	APR_1_INCLUDE_DIR = "/usr/include/apr-1/"	-- OSX
 	APR_1_LIB_DIR = "/usr/lib/"
 	APR_1_LIBS = 'apr-1'
+else
+	APR_1_INCLUDE_DIR = "/usr/include/apr-1.0/"	
+	APR_1_LIB_DIR = "/usr/lib/"
+	APR_1_LIBS = 'apr-1'
 end
 
 cpp.shared{
@@ -16,4 +20,5 @@ cpp.shared{
 		"apr-1",
 		"lua",
 	},
+	flags = "-Wno-uknown-pragmas",
 }
