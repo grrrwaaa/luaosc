@@ -20,7 +20,7 @@ cpp.shared{
 		"apr-1",
 		"lua",
 	},
-	flags = "-Wno-uknown-pragmas",
+	--flags = "-Wno-uknown-pragmas",	-- fails on OSX
 }
 
 target('install', 'osc', 'sudo cp $(DEPENDS) /usr/local/lib/lua/5.1/$(DEPENDS)')
