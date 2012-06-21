@@ -1,0 +1,5 @@
+*.o
+*.d
+*.spec
+*.perspectivev3
+build
