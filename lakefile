@@ -17,3 +17,5 @@ cpp.shared{
 		"lua",
 	},
 }
+
+target('install', 'osc', 'sudo cp $(DEPENDS) /usr/local/lib/lua/5.1/$(DEPENDS)')

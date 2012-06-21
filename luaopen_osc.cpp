@@ -192,7 +192,11 @@ int parsemessage(lua_State * L, char * buf, size_t size) {
 				switch(types[i]) {
 					case 'f': {
 						if (args + 4 > end) luaL_error(L, "message arguments exceed message size");
+						
+						printf("%i %i %i %i\n", args[0], args[1], args[2], args[3]);
+						
 						swap32(args);
+						printf("%i %i %i %i\n", args[0], args[1], args[2], args[3]);
 						lua_pushnumber(L, *(float *)args); lua_rawseti(L, -2, i);
 						args += 4;
 						break;

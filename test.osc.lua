@@ -10,7 +10,7 @@ local s = osc.Send("localhost", 8080)
 print(s:host(), s:port(), s:ip())
 
 -- send messages:
-s:send("/fo", 1, 2, 3)	--- float
+s:send("/pi", math.pi)	--- float
 s:send("/foo", "a", "aa", "aaa", "aaaa")
 
 -- send bundles:
