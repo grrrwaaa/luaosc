@@ -1,0 +1,1 @@
+g++ -arch i386 -arch x86_64 -O3 -fPIC -I/usr/local/include/luajit-2.0 -I/usr/include/apr-1/ luaopen_osc.cpp -L/usr/lib -lapr-1 -shared -undefined dynamic_lookup -o osc.so
